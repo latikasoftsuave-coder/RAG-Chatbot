@@ -1,6 +1,7 @@
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
+from langchain.schema import HumanMessage
 from utils.vectorstore_utils import save_vectorstore, load_vectorstore
 
 VECTORSTORE_PATH = ".vectorstore"
@@ -8,6 +9,7 @@ VECTORSTORE_PATH = ".vectorstore"
 class RAGService:
     def __init__(self):
         self.embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        self.fallback_llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
 
     def create_vectorstore(self, chunks):
         vectorstore = FAISS.from_texts(chunks, self.embeddings)
@@ -15,15 +17,26 @@ class RAGService:
 
     def load_rag(self):
         vectorstore = load_vectorstore(VECTORSTORE_PATH, self.embeddings)
-        retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k":3})
+        retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 3})
         qa = RetrievalQA.from_chain_type(
             llm=ChatOpenAI(model_name="gpt-4o-mini", temperature=0),
             chain_type="stuff",
             retriever=retriever
         )
-        return qa
+        return qa, retriever
 
     def get_answer(self, query: str):
-        qa = self.load_rag()
-        response = qa.invoke({"query": query})
-        return {"query": query, "answer": response["result"]}
+        try:
+            qa, retriever = self.load_rag()
+            docs = retriever.get_relevant_documents(query)
+            if not docs:
+                fallback_response = self.fallback_llm([HumanMessage(content=query)])
+                answer = fallback_response.content.strip()
+            else:
+                answer = qa.run(query).strip()
+                if len(answer) < 15 or "I don't know" in answer.lower():
+                    fallback_response = self.fallback_llm([HumanMessage(content=query)])
+                    answer = fallback_response.content.strip()
+        except Exception as e:
+            answer = f"❌ Something went wrong: {e}"
+        return {"query": query, "answer": answer}

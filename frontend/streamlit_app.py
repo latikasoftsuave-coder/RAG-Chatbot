@@ -33,7 +33,9 @@ if prompt := st.chat_input("Type your question here:"):
         response = requests.post(f"{API_URL}/ask_question/", json={"query": prompt, "session_id": st.session_state.session_id})
 
     if response.status_code == 200:
-        answer = response.json().get("answer")
+        answer = response.json().get("answer", "❌ No answer returned.")
+    else:
+        answer = "❌ Something went wrong while fetching the answer."
 
     st.session_state.messages.append({"role": "assistant", "content": answer})
     with st.chat_message("assistant"):
