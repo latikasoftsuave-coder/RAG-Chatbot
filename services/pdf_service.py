@@ -10,11 +10,7 @@ class PDFService:
         self.rag_service = rag_service
 
     async def process_pdf_file(self, file):
-        file_path = f"pdfs/{file.filename}"
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-
+        file_path = "/home/Desktop/rag_chatbot/pdfs/SS Employee Handbook Updated-2025 (1).pdf"
         text = self.read_pdf(file_path)
         chunks = self.split_text(text)
         self.rag_service.create_vectorstore(chunks)
