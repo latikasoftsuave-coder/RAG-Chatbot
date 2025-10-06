@@ -26,5 +26,4 @@ class RAGService:
     def get_answer(self, query: str):
         qa = self.load_rag()
         response = qa.invoke({"query": query})
-        answer = response["result"]
-        return {"query": query, "answer": answer}
+        return {"query": query, "answer": response["result"]}
