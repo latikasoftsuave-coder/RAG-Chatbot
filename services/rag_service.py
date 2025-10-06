@@ -3,7 +3,7 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from utils.vectorstore_utils import save_vectorstore, load_vectorstore
 
-VECTORSTORE_PATH = "vectorstore"
+VECTORSTORE_PATH = ".vectorstore"
 
 class RAGService:
     def __init__(self):

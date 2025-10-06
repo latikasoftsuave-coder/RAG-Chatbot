@@ -1,3 +1,4 @@
+.vectorstore/
 .venv/
 .env
 .idea/
