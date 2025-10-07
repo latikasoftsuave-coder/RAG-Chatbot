@@ -28,14 +28,15 @@ class RAGService:
     def get_answer(self, query: str):
         try:
             qa, retriever = self.load_rag()
-            docs = retriever.get_relevant_documents(query)
+            docs = retriever.invoke(query)
             if not docs:
-                fallback_response = self.fallback_llm([HumanMessage(content=query)])
+                fallback_response = self.fallback_llm.invoke([HumanMessage(content=query)])
                 answer = fallback_response.content.strip()
             else:
-                answer = qa.run(query).strip()
+                response = qa.invoke({"query": query})
+                answer = response["result"].strip()
                 if len(answer) < 15 or "I don't know" in answer.lower():
-                    fallback_response = self.fallback_llm([HumanMessage(content=query)])
+                    fallback_response = self.fallback_llm.invoke([HumanMessage(content=query)])
                     answer = fallback_response.content.strip()
         except Exception as e:
             answer = f"❌ Something went wrong: {e}"
