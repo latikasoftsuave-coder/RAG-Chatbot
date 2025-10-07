@@ -1,7 +1,7 @@
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
-from langchain.schema import HumanMessage
+from langchain.schema import HumanMessage, AIMessage
 from utils.vectorstore_utils import save_vectorstore, load_vectorstore
 
 VECTORSTORE_PATH = ".vectorstore"
@@ -25,18 +25,26 @@ class RAGService:
         )
         return qa, retriever
 
-    def get_answer(self, query: str):
+    def get_answer(self, query: str, history: list = None):
         try:
             qa, retriever = self.load_rag()
             docs = retriever.invoke(query)
+            context_messages = []
+            if history:
+                for msg in history[-10:]:
+                    if msg["role"] == "user":
+                        context_messages.append(HumanMessage(content=msg["content"]))
+                    else:
+                        context_messages.append(AIMessage(content=msg["content"]))
+            context_messages.append(HumanMessage(content=query))
             if not docs:
-                fallback_response = self.fallback_llm.invoke([HumanMessage(content=query)])
+                fallback_response = self.fallback_llm.invoke(context_messages)
                 answer = fallback_response.content.strip()
             else:
                 response = qa.invoke({"query": query})
                 answer = response["result"].strip()
-                if len(answer) < 15 or "I don't know" in answer.lower():
-                    fallback_response = self.fallback_llm.invoke([HumanMessage(content=query)])
+                if len(answer) < 15 or "i don't know" in answer.lower():
+                    fallback_response = self.fallback_llm.invoke(context_messages)
                     answer = fallback_response.content.strip()
         except Exception as e:
             answer = f"❌ Something went wrong: {e}"

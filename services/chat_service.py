@@ -21,6 +21,17 @@ class ChatService:
         self.db.refresh(msg)
         return msg
 
+    def get_last_messages(self, session_id: str, limit: int = 10):
+        messages = (
+            self.db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        messages.reverse()
+        return [{"role": m.role, "content": m.content} for m in messages]
+
     def get_chat_history(self, session_id: str):
         messages = (
             self.db.query(ChatMessage)
@@ -30,5 +41,5 @@ class ChatService:
         )
         return [{"role": m.role, "content": m.content, "created_at": m.created_at} for m in messages]
 
-    def get_answer(self, query: str):
-        return self.rag_service.get_answer(query)
+    def get_answer(self, query: str, history: list = None):
+        return self.rag_service.get_answer(query, history)

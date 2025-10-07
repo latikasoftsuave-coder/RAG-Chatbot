@@ -37,7 +37,8 @@ async def ask_question(request: QuestionRequest, db: Session = Depends(get_db)):
     try:
         chat_service = ChatService(db, rag_service)
         chat_service.save_user_message(request.session_id, request.query)
-        answer = chat_service.get_answer(request.query).get("answer")
+        history = chat_service.get_last_messages(request.session_id, limit=10)
+        answer = chat_service.get_answer(request.query, history=history).get("answer")
         chat_service.save_assistant_message(request.session_id, answer)
         print(request.session_id)
         return {"query": request.query, "answer": answer}
