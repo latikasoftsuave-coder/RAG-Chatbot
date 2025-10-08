@@ -38,10 +38,10 @@ async def ask_question(request: QuestionRequest, db: Session = Depends(get_db)):
         chat_service = ChatService(db, rag_service)
         chat_service.save_user_message(request.session_id, request.query)
         history = chat_service.get_last_messages(request.session_id, limit=10)
-        answer = chat_service.get_answer(request.query, history=history).get("answer")
-        chat_service.save_assistant_message(request.session_id, answer)
+        response = chat_service.process_query(request.session_id, request.query, history=history)
+        chat_service.save_assistant_message(request.session_id, response["answer"])
         print(request.session_id)
-        return {"query": request.query, "answer": answer}
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
