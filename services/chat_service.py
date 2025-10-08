@@ -54,6 +54,13 @@ class ChatService:
                 return {"answer": self.workflow_service.confirm_application(session_id, self.db)}
             next_field = self.workflow_service.next_missing_field(session_id)
             if next_field:
+                if len(query.split()) > 6 or "tell me" in query.lower() or "what" in query.lower():
+                    return {
+                        "answer": (
+                            f"You're currently filling your job application. "
+                            f"Please provide your **{next_field}**, or type **'cancel'** to stop the application."
+                        )
+                    }
                 self.workflow_service.update_field(session_id, next_field, query)
                 next_field = self.workflow_service.next_missing_field(session_id)
                 if next_field:
