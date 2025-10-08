@@ -86,3 +86,35 @@ class ApplicationService:
         if session_id in application_sessions:
             del application_sessions[session_id]
         return "Application canceled."
+
+    def view_application(self, session_id: str, db: Session):
+        app = db.query(JobApplication).filter(JobApplication.session_id == session_id).first()
+        if not app:
+            return "❌ No application found for your session."
+        return (
+            f"📄 Here are your application details:\n\n"
+            f"Name: {app.name or 'N/A'}\n\n"
+            f"Email: {app.email or 'N/A'}\n\n"
+            f"Company: {app.company or 'N/A'}\n\n"
+            f"Job Role: {app.job_role or 'N/A'}\n\n"
+            f"Experience: {app.experience or 'N/A'}"
+        )
+
+    def update_application(self, session_id: str, db: Session, field: str, value: str):
+        app = db.query(JobApplication).filter(JobApplication.session_id == session_id).first()
+        if not app:
+            return "❌ No existing application found to update."
+        if field not in self.required_fields:
+            return f"⚠️ '{field}' is not a valid field. Valid fields are: {', '.join(self.required_fields)}"
+        setattr(app, field, value.strip())
+        db.commit()
+        db.refresh(app)
+        return f"✅ Your {field} has been updated to '{value.strip()}'.\n"
+
+    def delete_application(self, session_id: str, db: Session):
+        app = db.query(JobApplication).filter(JobApplication.session_id == session_id).first()
+        if not app:
+            return "❌ No application found to delete."
+        db.delete(app)
+        db.commit()
+        return "🗑️ Your job application has been permanently deleted."

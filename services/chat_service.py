@@ -69,18 +69,62 @@ class ChatService:
                     workflow_session["state"] = "AWAITING_CONFIRMATION"
                     return {"answer": "All details collected. Please confirm your application (yes/no)."}
         intent = self.check_intent(query)
-        if "start" in intent.lower() or query.lower() in ["/apply", "apply for a job", "start application"]:
+
+        if "start" in intent or query.lower() in ["/apply", "apply for a job", "start application"]:
             answer = self.workflow_service.start_application(session_id)
             return {"answer": answer}
+
+        if "view" in intent or "show application" in query.lower():
+            answer = self.workflow_service.view_application(session_id, self.db)
+            return {"answer": answer}
+
+        if "update" in intent or "change" in query.lower():
+            try:
+                updates_str = query.split("update", 1)[1]
+                updates_str = updates_str.replace(",", " and ")
+                updates_list = [u.strip() for u in updates_str.split(" and ") if u.strip()]
+                field_aliases = {
+                    "mail": "email",
+                    "role": "job_role",
+                    "company name": "company"
+                }
+                messages = []
+                for item in updates_list:
+                    if "to" not in item:
+                        messages.append(f"⚠️ Could not understand: '{item}'")
+                        continue
+                    field_part, value_part = item.split("to", 1)
+                    field = field_part.replace("my", "").replace("the", "").strip()
+                    if field in field_aliases:
+                        field = field_aliases[field]
+                    value = value_part.strip()
+                    result = self.workflow_service.update_application(session_id, self.db, field, value)
+                    messages.append(result)
+                return {"answer": "\n".join(messages)}
+            except Exception as e:
+                return {"answer": f"❌ Could not parse update command: {e}"}
+
+        if "delete" in intent or "remove" in query.lower():
+            answer = self.workflow_service.delete_application(session_id, self.db)
+            return {"answer": answer}
+
         answer = self.get_answer(query, history).get("answer")
         return {"answer": answer}
 
     def check_intent(self, query: str):
         prompt = f"""
-        User message: {query}
-        Decide if user wants to start, edit, or view a job application.
-        Reply in JSON format: {{"action": "start"}} or {{"action": "none"}}
-        """
+            User message: {query}
+
+            Identify the user's intent for job application management.
+            Possible intents:
+            - start: start a new job application
+            - view: view submitted application details
+            - update: update specific fields in an existing application
+            - delete: delete or remove the application
+            - none: unrelated to job application
+
+            Reply in JSON: {{"action": "<one_of_above>"}}
+            """
         result = self.rag_service.fallback_llm.invoke([HumanMessage(content=prompt)])
         return result.content
 
