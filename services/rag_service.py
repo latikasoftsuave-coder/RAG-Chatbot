@@ -28,24 +28,19 @@ class RAGService:
     def get_answer(self, query: str, history: list = None):
         try:
             qa, retriever = self.load_rag()
-            docs = retriever.invoke(query)
+            docs = retriever.get_relevant_documents(query)
             context_messages = []
+            for doc in docs:
+                context_messages.append(HumanMessage(content=doc.page_content))
             if history:
-                for msg in history[-10:]:
+                for msg in history:
                     if msg["role"] == "user":
                         context_messages.append(HumanMessage(content=msg["content"]))
                     else:
                         context_messages.append(AIMessage(content=msg["content"]))
             context_messages.append(HumanMessage(content=query))
-            if not docs:
-                fallback_response = self.fallback_llm.invoke(context_messages)
-                answer = fallback_response.content.strip()
-            else:
-                response = qa.invoke({"query": query})
-                answer = response["result"].strip()
-                if len(answer) < 15 or "i don't know" in answer.lower():
-                    fallback_response = self.fallback_llm.invoke(context_messages)
-                    answer = fallback_response.content.strip()
+            fallback_response = self.fallback_llm.invoke(context_messages)
+            answer = fallback_response.content.strip()
         except Exception as e:
             answer = f"❌ Something went wrong: {e}"
         return {"query": query, "answer": answer}

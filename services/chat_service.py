@@ -3,6 +3,7 @@ from db.models import ChatMessage
 from services.rag_service import RAGService
 from services.application_service import ApplicationService
 from langchain.schema import HumanMessage
+import json
 
 class ChatService:
     def __init__(self, db: Session, rag_service: RAGService):
@@ -24,17 +25,6 @@ class ChatService:
         self.db.refresh(msg)
         return msg
 
-    def get_last_messages(self, session_id: str, limit: int = 10):
-        messages = (
-            self.db.query(ChatMessage)
-            .filter(ChatMessage.session_id == session_id)
-            .order_by(ChatMessage.created_at.desc())
-            .limit(limit)
-            .all()
-        )
-        messages.reverse()
-        return [{"role": m.role, "content": m.content} for m in messages]
-
     def get_chat_history(self, session_id: str):
         messages = (
             self.db.query(ChatMessage)
@@ -43,6 +33,14 @@ class ChatService:
             .all()
         )
         return [{"role": m.role, "content": m.content, "created_at": m.created_at} for m in messages]
+
+    def get_last_messages(self, session_id: str, limit: int = None):
+        query = self.db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(
+            ChatMessage.created_at.desc())
+        if limit:
+            query = query.limit(limit)
+        messages = query.all()
+        return [{"role": m.role, "content": m.content} for m in messages]
 
     def process_query(self, session_id: str, query: str, history: list = None):
         workflow_session = self.workflow_service.get_session(session_id)
@@ -69,7 +67,10 @@ class ChatService:
                     workflow_session["state"] = "AWAITING_CONFIRMATION"
                     return {"answer": "All details collected. Please confirm your application (yes/no)."}
         intent = self.check_intent(query)
-
+        try:
+            intent = json.loads(intent).get("action", "none")
+        except:
+            intent = "none"
         if "start" in intent or query.lower() in ["/apply", "apply for a job", "start application"]:
             answer = self.workflow_service.start_application(session_id)
             return {"answer": answer}
