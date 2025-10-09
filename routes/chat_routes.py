@@ -5,6 +5,8 @@ from services.pdf_service import PDFService
 from services.rag_service import RAGService
 from services.chat_service import ChatService
 from db.database import SessionLocal, Base, engine
+from db.models import ChatMessage
+from sqlalchemy import desc, func
 
 class QuestionRequest(BaseModel):
     query: str
@@ -51,4 +53,32 @@ async def get_history(session_id: str, db: Session = Depends(get_db)):
         chat_service = ChatService(db, rag_service)
         return chat_service.get_chat_history(session_id)
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/sessions/")
+async def get_sessions(db: Session = Depends(get_db)):
+    try:
+        sessions = (
+            db.query(ChatMessage.session_id)
+            .group_by(ChatMessage.session_id)
+            .order_by(desc(func.max(ChatMessage.created_at)))
+            .all()
+        )
+        session_list = [s[0] for s in sessions]
+        return {"sessions": session_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/delete_session/{session_id}")
+async def delete_session(session_id: str, db: Session = Depends(get_db)):
+    try:
+        messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).all()
+        if not messages:
+            raise HTTPException(status_code=404, detail="Session not found")
+        for msg in messages:
+            db.delete(msg)
+        db.commit()
+        return {"detail": f"Session {session_id} deleted successfully."}
+    except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
