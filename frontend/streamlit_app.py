@@ -30,6 +30,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "session_loaded_from_db" not in st.session_state:
     st.session_state.session_loaded_from_db = False
+if "show_confirm_delete" not in st.session_state:
+    st.session_state.show_confirm_delete = False
 
 selected = st.sidebar.selectbox(
     "Select a session",
@@ -59,19 +61,31 @@ if selected != st.session_state.selected_session:
 
 if selected != NEW_CHAT_LABEL:
     if st.sidebar.button("🗑️ Delete Session"):
-        try:
-            response = requests.delete(f"{API_URL}/delete_session/{selected}")
-            if response.status_code == 200:
-                st.success(f"Session {selected} deleted!")
-                st.session_state.selected_session = NEW_CHAT_LABEL
-                st.session_state.session_id = None
-                st.session_state.messages = []
-                st.query_params.clear()
+        st.session_state.show_confirm_delete = True
+
+    if st.session_state.show_confirm_delete:
+        st.sidebar.warning(f"Are you sure you want to delete session '{selected}'?")
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            if st.button("✅ Yes"):
+                try:
+                    response = requests.delete(f"{API_URL}/delete_session/{selected}")
+                    if response.status_code == 200:
+                        st.success(f"Session {selected} deleted!")
+                        st.session_state.selected_session = NEW_CHAT_LABEL
+                        st.session_state.session_id = None
+                        st.session_state.messages = []
+                        st.query_params.clear()
+                        st.session_state.show_confirm_delete = False
+                        st.rerun()
+                    else:
+                        st.error("Failed to delete session.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+        with col2:
+            if st.button("❌ Cancel"):
+                st.session_state.show_confirm_delete = False
                 st.rerun()
-            else:
-                st.error("Failed to delete session.")
-        except Exception as e:
-            st.error(f"Error: {e}")
 
 if (
     st.session_state.session_id
