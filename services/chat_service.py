@@ -25,6 +25,43 @@ class ChatService:
         self.db.refresh(msg)
         return msg
 
+    def save_user_message(self, session_id: str, content: str):
+        first_msg = (
+            self.db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .first()
+        )
+        title = None
+        if not first_msg:
+            title = self.generate_session_title_from_content(content)
+
+        msg = ChatMessage(session_id=session_id, role="user", content=content, title=title)
+        self.db.add(msg)
+        self.db.commit()
+        self.db.refresh(msg)
+        return msg
+
+    def generate_session_title_from_content(self, content: str):
+        prompt = f"Generate a concise 3–5 word title for this chat:\n\n{content}"
+        try:
+            response = self.rag_service.fallback_llm.invoke([HumanMessage(content=prompt)])
+            title = response.content.strip()
+            return title if title else None
+        except Exception:
+            return None
+
+    def generate_session_title(self, session_id: str):
+        first_msg = (
+            self.db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id, ChatMessage.role == "user")
+            .order_by(ChatMessage.created_at.asc())
+            .first()
+        )
+        if not first_msg:
+            return session_id
+
+        return first_msg.title or first_msg.content[:50]
+
     def get_chat_history(self, session_id: str):
         messages = (
             self.db.query(ChatMessage)

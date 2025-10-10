@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import uuid
 
-API_URL = "http://127.0.0.1:8000/chat"
+API_URL = "http://127.0.0.1:8080/chat"
 NEW_CHAT_LABEL = "New Chat (Start Fresh)"
 
 st.set_page_config(page_title="RAG Chatbot", page_icon="🤖", layout="wide")
@@ -13,9 +13,18 @@ st.sidebar.title("💬 Chat History")
 
 try:
     sessions_resp = requests.get(f"{API_URL}/sessions/")
-    all_sessions = sessions_resp.json().get("sessions", []) if sessions_resp.status_code == 200 else []
+    all_sessions_data = sessions_resp.json().get("sessions", []) if sessions_resp.status_code == 200 else []
+    all_sessions = []
+    session_id_map = {}
+
+    for s in all_sessions_data:
+        if s.get("title"):
+            all_sessions.append(s["title"])
+            session_id_map[s["title"]] = s["id"]
+
 except Exception:
     all_sessions = []
+    session_id_map = {}
 
 session_list = [NEW_CHAT_LABEL] + all_sessions
 
@@ -35,9 +44,10 @@ if "show_confirm_delete" not in st.session_state:
 
 selected = st.sidebar.selectbox(
     "Select a session",
-    session_list,
-    index=session_list.index(st.session_state.selected_session)
-    if st.session_state.selected_session in session_list else 0,
+    [NEW_CHAT_LABEL] + all_sessions,
+    index=([NEW_CHAT_LABEL] + all_sessions).index(st.session_state.selected_session)
+          if st.session_state.selected_session in all_sessions else 0,
+    key="session_selectbox"
 )
 
 if selected != st.session_state.selected_session:
@@ -45,13 +55,14 @@ if selected != st.session_state.selected_session:
     st.session_state.session_loaded_from_db = False
 
     if selected != NEW_CHAT_LABEL:
-        st.query_params["session"] = selected
+        st.query_params["session"] = session_id_map[selected]
+        st.session_state.session_id = session_id_map[selected]
+
         try:
-            history_resp = requests.get(f"{API_URL}/history/{selected}")
+            history_resp = requests.get(f"{API_URL}/history/{st.session_state.session_id}")
             st.session_state.messages = history_resp.json() if history_resp.status_code == 200 else []
         except Exception:
             st.session_state.messages = []
-        st.session_state.session_id = selected
         st.session_state.session_loaded_from_db = True
     else:
         st.query_params.clear()

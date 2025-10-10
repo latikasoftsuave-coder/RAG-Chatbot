@@ -59,12 +59,18 @@ async def get_history(session_id: str, db: Session = Depends(get_db)):
 async def get_sessions(db: Session = Depends(get_db)):
     try:
         sessions = (
-            db.query(ChatMessage.session_id)
-            .group_by(ChatMessage.session_id)
+            db.query(ChatMessage.session_id, ChatMessage.title)
+            .group_by(ChatMessage.session_id, ChatMessage.title)
             .order_by(desc(func.max(ChatMessage.created_at)))
             .all()
         )
-        session_list = [s[0] for s in sessions]
+
+        session_list = []
+        for s in sessions:
+            session_id = s[0]
+            title = s[1] or session_id
+            session_list.append({"id": session_id, "title": title})
+
         return {"sessions": session_list}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

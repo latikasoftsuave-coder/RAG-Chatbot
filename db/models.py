@@ -10,6 +10,7 @@ class ChatMessage(Base):
     role = Column(String, nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    title = Column(String, nullable=True)
 
 class JobApplication(Base):
     __tablename__ = "job_applications"
