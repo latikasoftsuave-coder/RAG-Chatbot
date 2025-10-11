@@ -83,6 +83,9 @@ class ChatService:
 
     def process_query(self, session_id: str, query: str, history: list = None):
         workflow_session = self.workflow_service.get_session(session_id)
+        if "apply" in query.lower() and "job" in query.lower():
+            answer = self.workflow_service.start_application(session_id)
+            return {"answer": answer}
         if workflow_session:
             state = workflow_session["state"]
             if query.lower() in ["cancel", "exit", "stop"]:
