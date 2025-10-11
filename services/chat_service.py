@@ -3,6 +3,7 @@ from db.models import ChatMessage
 from services.rag_service import RAGService
 from services.application_service import ApplicationService
 from langchain.schema import HumanMessage
+from sqlalchemy import desc, func
 import json
 
 class ChatService:
@@ -10,20 +11,6 @@ class ChatService:
         self.db = db
         self.rag_service = rag_service
         self.workflow_service = ApplicationService()
-
-    def save_user_message(self, session_id: str, content: str):
-        msg = ChatMessage(session_id=session_id, role="user", content=content)
-        self.db.add(msg)
-        self.db.commit()
-        self.db.refresh(msg)
-        return msg
-
-    def save_assistant_message(self, session_id: str, content: str):
-        msg = ChatMessage(session_id=session_id, role="assistant", content=content)
-        self.db.add(msg)
-        self.db.commit()
-        self.db.refresh(msg)
-        return msg
 
     def save_user_message(self, session_id: str, content: str):
         first_msg = (
@@ -41,6 +28,13 @@ class ChatService:
         self.db.refresh(msg)
         return msg
 
+    def save_assistant_message(self, session_id: str, content: str):
+        msg = ChatMessage(session_id=session_id, role="assistant", content=content)
+        self.db.add(msg)
+        self.db.commit()
+        self.db.refresh(msg)
+        return msg
+
     def generate_session_title_from_content(self, content: str):
         prompt = f"Generate a concise 3–5 word title for this chat:\n\n{content}"
         try:
@@ -51,6 +45,51 @@ class ChatService:
             return title if title else None
         except Exception:
             return None
+
+    def delete_session(self, session_id: str):
+        messages = self.db.query(ChatMessage).filter(ChatMessage.session_id == session_id).all()
+        if not messages:
+            raise Exception("Session not found")
+        for msg in messages:
+            self.db.delete(msg)
+        self.db.commit()
+        return {"detail": f"Session {session_id} deleted successfully."}
+
+    def get_all_sessions(self):
+        sub_latest = (
+            self.db.query(
+                ChatMessage.session_id,
+                func.max(ChatMessage.created_at).label("latest_time")
+            )
+            .group_by(ChatMessage.session_id)
+            .subquery()
+        )
+
+        latest_msgs = (
+            self.db.query(ChatMessage)
+            .join(
+                sub_latest,
+                (ChatMessage.session_id == sub_latest.c.session_id)
+                & (ChatMessage.created_at == sub_latest.c.latest_time)
+            )
+            .order_by(desc(ChatMessage.created_at))
+            .all()
+        )
+
+        session_list = []
+        for msg in latest_msgs:
+            title = (
+                self.db.query(ChatMessage.title)
+                .filter(
+                    ChatMessage.session_id == msg.session_id,
+                    ChatMessage.title.isnot(None)
+                )
+                .order_by(ChatMessage.created_at.asc())
+                .first()
+            )
+            title = title[0] if title else msg.session_id
+            session_list.append({"id": msg.session_id, "title": title})
+        return {"sessions": session_list}
 
     def generate_session_title(self, session_id: str):
         first_msg = (
@@ -72,6 +111,13 @@ class ChatService:
             .all()
         )
         return [{"role": m.role, "content": m.content, "created_at": m.created_at} for m in messages]
+
+    def handle_user_query(self, session_id: str, query: str):
+        self.save_user_message(session_id, query)
+        history = self.get_last_messages(session_id)
+        response = self.process_query(session_id, query, history=history)
+        self.save_assistant_message(session_id, response["answer"])
+        return response
 
     def get_last_messages(self, session_id: str, limit: int = None):
         query = self.db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(
