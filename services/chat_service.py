@@ -46,6 +46,8 @@ class ChatService:
         try:
             response = self.rag_service.fallback_llm.invoke([HumanMessage(content=prompt)])
             title = response.content.strip()
+            if (title.startswith('"') and title.endswith('"')) or (title.startswith("'") and title.endswith("'")):
+                title = title[1:-1].strip()
             return title if title else None
         except Exception:
             return None

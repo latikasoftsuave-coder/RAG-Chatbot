@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import uuid
 
-API_URL = "http://127.0.0.1:8080/chat"
+API_URL = "http://127.0.0.1:8000/chat"
 NEW_CHAT_LABEL = "New Chat (Start Fresh)"
 
 st.set_page_config(page_title="RAG Chatbot", page_icon="🤖", layout="wide")
@@ -27,14 +27,18 @@ except Exception:
     session_id_map = {}
 
 session_list = [NEW_CHAT_LABEL] + all_sessions
+url_session_id = st.query_params.get("session", [None])[0] if isinstance(st.query_params.get("session"), list) else st.query_params.get("session")
 
-params = st.query_params
-url_session = params.get("session", [None])[0] if isinstance(params.get("session"), list) else params.get("session")
+selected_session_title = None
+for title, sid in session_id_map.items():
+    if sid == url_session_id:
+        selected_session_title = title
+        break
 
 if "selected_session" not in st.session_state:
-    st.session_state.selected_session = url_session or NEW_CHAT_LABEL
+    st.session_state.selected_session = selected_session_title or NEW_CHAT_LABEL
 if "session_id" not in st.session_state:
-    st.session_state.session_id = url_session
+    st.session_state.session_id = url_session_id
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "session_loaded_from_db" not in st.session_state:
@@ -52,12 +56,11 @@ selected = st.sidebar.selectbox(
 
 if selected != st.session_state.selected_session:
     st.session_state.selected_session = selected
+    st.session_state.session_id = session_id_map.get(selected)
+    st.query_params["session"] = st.session_state.session_id
     st.session_state.session_loaded_from_db = False
 
     if selected != NEW_CHAT_LABEL:
-        st.query_params["session"] = session_id_map[selected]
-        st.session_state.session_id = session_id_map[selected]
-
         try:
             history_resp = requests.get(f"{API_URL}/history/{st.session_state.session_id}")
             st.session_state.messages = history_resp.json() if history_resp.status_code == 200 else []
@@ -65,9 +68,8 @@ if selected != st.session_state.selected_session:
             st.session_state.messages = []
         st.session_state.session_loaded_from_db = True
     else:
-        st.query_params.clear()
-        st.session_state.session_id = None
         st.session_state.messages = []
+        st.query_params.clear()
     st.rerun()
 
 if selected != NEW_CHAT_LABEL:
@@ -80,9 +82,10 @@ if selected != NEW_CHAT_LABEL:
         with col1:
             if st.button("✅ Yes"):
                 try:
-                    response = requests.delete(f"{API_URL}/delete_session/{selected}")
+                    session_id_to_delete = session_id_map.get(selected, selected)
+                    response = requests.delete(f"{API_URL}/delete_session/{session_id_to_delete}")
                     if response.status_code == 200:
-                        st.success(f"Session {selected} deleted!")
+                        st.success(f"Session '{selected}' deleted!")
                         st.session_state.selected_session = NEW_CHAT_LABEL
                         st.session_state.session_id = None
                         st.session_state.messages = []

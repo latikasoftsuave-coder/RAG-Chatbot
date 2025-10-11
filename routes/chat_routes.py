@@ -58,19 +58,39 @@ async def get_history(session_id: str, db: Session = Depends(get_db)):
 @router.get("/sessions/")
 async def get_sessions(db: Session = Depends(get_db)):
     try:
-        sessions = (
-            db.query(ChatMessage.session_id, ChatMessage.title)
-            .group_by(ChatMessage.session_id, ChatMessage.title)
-            .order_by(desc(func.max(ChatMessage.created_at)))
+        sub_latest = (
+            db.query(
+                ChatMessage.session_id,
+                func.max(ChatMessage.created_at).label("latest_time")
+            )
+            .group_by(ChatMessage.session_id)
+            .subquery()
+        )
+
+        latest_msgs = (
+            db.query(ChatMessage)
+            .join(
+                sub_latest,
+                (ChatMessage.session_id == sub_latest.c.session_id)
+                & (ChatMessage.created_at == sub_latest.c.latest_time)
+            )
+            .order_by(desc(ChatMessage.created_at))
             .all()
         )
 
         session_list = []
-        for s in sessions:
-            session_id = s[0]
-            title = s[1] or session_id
-            session_list.append({"id": session_id, "title": title})
-
+        for msg in latest_msgs:
+            title = (
+                db.query(ChatMessage.title)
+                .filter(
+                    ChatMessage.session_id == msg.session_id,
+                    ChatMessage.title.isnot(None)
+                )
+                .order_by(ChatMessage.created_at.asc())
+                .first()
+            )
+            title = title[0] if title else msg.session_id
+            session_list.append({"id": msg.session_id, "title": title})
         return {"sessions": session_list}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
