@@ -91,18 +91,6 @@ class ChatService:
             session_list.append({"id": msg.session_id, "title": title})
         return {"sessions": session_list}
 
-    def generate_session_title(self, session_id: str):
-        first_msg = (
-            self.db.query(ChatMessage)
-            .filter(ChatMessage.session_id == session_id, ChatMessage.role == "user")
-            .order_by(ChatMessage.created_at.asc())
-            .first()
-        )
-        if not first_msg:
-            return session_id
-
-        return first_msg.title or first_msg.content[:50]
-
     def get_chat_history(self, session_id: str):
         messages = (
             self.db.query(ChatMessage)
