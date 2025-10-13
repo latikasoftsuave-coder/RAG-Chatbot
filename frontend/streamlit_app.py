@@ -38,6 +38,19 @@ if "show_confirm_delete" not in st.session_state:
 url_session_id = st.query_params.get("session", [None])
 if isinstance(url_session_id, list):
     url_session_id = url_session_id[0]
+if url_session_id and not st.session_state.session_loaded_from_db:
+    for title, sid in session_id_map.items():
+        if sid == url_session_id:
+            st.session_state.selected_session = title
+            st.session_state.session_id = sid
+            try:
+                history_resp = requests.get(f"{API_URL}/history/{sid}")
+                st.session_state.messages = history_resp.json() if history_resp.status_code == 200 else []
+            except Exception:
+                st.session_state.messages = []
+            st.session_state.session_loaded_from_db = True
+            break
+
 selected_session_title = None
 for title, sid in session_id_map.items():
     if sid == url_session_id:
