@@ -21,9 +21,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, db: Session 
     try:
         while True:
             data = await websocket.receive_text()
-            # data is the user's message
             response = chat_service.handle_user_query(session_id, data)
-            # send assistant's response
             await websocket.send_text(response["answer"])
     except WebSocketDisconnect:
         print(f"Client disconnected: {session_id}")
