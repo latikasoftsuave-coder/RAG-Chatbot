@@ -1,8 +1,11 @@
 import streamlit as st
 import requests
+import asyncio
+import websockets
 import uuid
 
 API_URL = "http://127.0.0.1:8000/chat"
+WS_URL = "ws://127.0.0.1:8000/chat/ws"  # WebSocket endpoint
 NEW_CHAT_LABEL = "New Chat (Start Fresh)"
 
 st.set_page_config(page_title="RAG Chatbot", page_icon="🤖", layout="wide")
@@ -51,25 +54,11 @@ if url_session_id and not st.session_state.session_loaded_from_db:
             st.session_state.session_loaded_from_db = True
             break
 
-selected_session_title = None
-for title, sid in session_id_map.items():
-    if sid == url_session_id:
-        selected_session_title = title
-        break
-if selected_session_title:
-    st.session_state.selected_session = selected_session_title
-    st.session_state.session_id = session_id_map[selected_session_title]
-
 session_options = [NEW_CHAT_LABEL] + all_sessions
-if (
-    st.session_state.selected_session
-    and st.session_state.selected_session not in session_options
-    and st.session_state.selected_session != NEW_CHAT_LABEL
-):
+if st.session_state.selected_session not in session_options and st.session_state.selected_session != NEW_CHAT_LABEL:
     session_options.insert(1, st.session_state.selected_session)
 
 selected_index = session_options.index(st.session_state.selected_session) if st.session_state.selected_session in session_options else 0
-
 selected = st.sidebar.selectbox(
     "Select a session",
     session_options,
@@ -129,6 +118,12 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
+async def send_receive_ws(session_id, message):
+    async with websockets.connect(f"{WS_URL}/{session_id}") as ws:
+        await ws.send(message)
+        response = await ws.recv()
+        return response
+
 if prompt := st.chat_input("Type your question here..."):
     if st.session_state.session_id is None or st.session_state.selected_session == NEW_CHAT_LABEL:
         new_id = str(uuid.uuid4())
@@ -142,18 +137,9 @@ if prompt := st.chat_input("Type your question here..."):
         st.markdown(prompt)
 
     try:
-        response = requests.post(
-            f"{API_URL}/ask_question/",
-            json={"query": prompt, "session_id": st.session_state.session_id},
-        )
-        history_resp = requests.get(f"{API_URL}/history/{st.session_state.session_id}")
-        st.session_state.messages = history_resp.json() if history_resp.status_code == 200 else []
-
-        if st.session_state.selected_session == "Untitled" and st.session_state.messages:
-            first_msg = st.session_state.messages[0]
-            st.session_state.selected_session = first_msg.get("title", st.session_state.session_id)
-            st.query_params["session"] = st.session_state.session_id
-    except Exception:
-        st.session_state.messages.append({"role": "assistant", "content": "❌ Something went wrong."})
+        response = asyncio.run(send_receive_ws(st.session_state.session_id, prompt))
+        st.session_state.messages.append({"role": "assistant", "content": response})
+    except Exception as e:
+        st.session_state.messages.append({"role": "assistant", "content": f"❌ Something went wrong: {e}"})
 
     st.rerun()
