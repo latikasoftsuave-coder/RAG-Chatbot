@@ -27,17 +27,18 @@ if "ws_connection" not in st.session_state:
 def get_ws(session_id):
     ws = st.session_state.ws_connection
     if ws is None:
+        if not session_id:
+            raise ValueError("Session ID cannot be None for WebSocket")
         ws = ws_sync.connect(f"{WS_URL}/{session_id}")
         st.session_state.ws_connection = ws
     return ws
 
 def send_receive(session_id, message):
-    ws = get_ws(session_id)
+    ws = get_ws(st.session_state.session_id)
     try:
         ws.send(message)
         response = ws.recv()
     except ws_sync.ConnectionClosed:
-        # reconnect once
         ws = ws_sync.connect(f"{WS_URL}/{session_id}")
         st.session_state.ws_connection = ws
         ws.send(message)
@@ -139,7 +140,6 @@ if selected != NEW_CHAT_LABEL:
                         st.session_state.messages = []
                         st.query_params.clear()
                         st.session_state.show_confirm_delete = False
-                        run_async(close_ws())
                         st.rerun()
                     else:
                         st.error("Failed to delete session.")
@@ -167,7 +167,9 @@ if prompt := st.chat_input("Type your question here..."):
         st.markdown(prompt)
 
     try:
-        response = send_receive(st.session_state.session_id, prompt)
+        ws = get_ws(st.session_state.session_id)
+        ws.send(prompt)
+        response = ws.recv()
         st.session_state.messages.append({"role": "assistant", "content": response})
     except Exception as e:
         st.session_state.messages.append({"role": "assistant", "content": f"❌ Something went wrong: {e}"})
