@@ -1,18 +1,54 @@
 import streamlit as st
 import requests
 import asyncio
-import websockets
 import uuid
+import websockets.sync.client as ws_sync
 
 API_URL = "http://127.0.0.1:8000/chat"
-WS_URL = "ws://127.0.0.1:8000/chat/ws"  # WebSocket endpoint
+WS_URL = "ws://127.0.0.1:8000/chat/ws"
 NEW_CHAT_LABEL = "New Chat (Start Fresh)"
 
 st.set_page_config(page_title="RAG Chatbot", page_icon="🤖", layout="wide")
 st.title("Chatbot using RAG 🔍")
 st.write("Hey, I'm your SS Employee Handbook Guide!")
-
 st.sidebar.title("💬 Chat History")
+
+def run_async(coro):
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
+
+if "ws_connection" not in st.session_state:
+    st.session_state.ws_connection = None
+
+def get_ws(session_id):
+    ws = st.session_state.ws_connection
+    if ws is None:
+        ws = ws_sync.connect(f"{WS_URL}/{session_id}")
+        st.session_state.ws_connection = ws
+    return ws
+
+def send_receive(session_id, message):
+    ws = get_ws(session_id)
+    try:
+        ws.send(message)
+        response = ws.recv()
+    except ws_sync.ConnectionClosed:
+        # reconnect once
+        ws = ws_sync.connect(f"{WS_URL}/{session_id}")
+        st.session_state.ws_connection = ws
+        ws.send(message)
+        response = ws.recv()
+    return response
+
+async def close_ws():
+    ws = st.session_state.get("ws_connection")
+    if ws:
+        await ws.close()
+        st.session_state.ws_connection = None
 
 try:
     sessions_resp = requests.get(f"{API_URL}/sessions/")
@@ -71,7 +107,6 @@ if selected != st.session_state.selected_session:
     st.session_state.session_id = session_id_map.get(selected)
     st.query_params["session"] = st.session_state.session_id
     st.session_state.session_loaded_from_db = False
-
     if selected != NEW_CHAT_LABEL:
         try:
             history_resp = requests.get(f"{API_URL}/history/{st.session_state.session_id}")
@@ -104,6 +139,7 @@ if selected != NEW_CHAT_LABEL:
                         st.session_state.messages = []
                         st.query_params.clear()
                         st.session_state.show_confirm_delete = False
+                        run_async(close_ws())
                         st.rerun()
                     else:
                         st.error("Failed to delete session.")
@@ -118,12 +154,6 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-async def send_receive_ws(session_id, message):
-    async with websockets.connect(f"{WS_URL}/{session_id}") as ws:
-        await ws.send(message)
-        response = await ws.recv()
-        return response
-
 if prompt := st.chat_input("Type your question here..."):
     if st.session_state.session_id is None or st.session_state.selected_session == NEW_CHAT_LABEL:
         new_id = str(uuid.uuid4())
@@ -137,7 +167,7 @@ if prompt := st.chat_input("Type your question here..."):
         st.markdown(prompt)
 
     try:
-        response = asyncio.run(send_receive_ws(st.session_state.session_id, prompt))
+        response = send_receive(st.session_state.session_id, prompt)
         st.session_state.messages.append({"role": "assistant", "content": response})
     except Exception as e:
         st.session_state.messages.append({"role": "assistant", "content": f"❌ Something went wrong: {e}"})
