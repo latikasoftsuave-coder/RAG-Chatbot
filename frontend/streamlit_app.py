@@ -78,6 +78,7 @@ if "show_confirm_delete" not in st.session_state:
 url_session_id = st.query_params.get("session", [None])
 if isinstance(url_session_id, list):
     url_session_id = url_session_id[0]
+
 if url_session_id and not st.session_state.session_loaded_from_db:
     for title, sid in session_id_map.items():
         if sid == url_session_id:
@@ -92,10 +93,12 @@ if url_session_id and not st.session_state.session_loaded_from_db:
             break
 
 session_options = [NEW_CHAT_LABEL] + all_sessions
-if st.session_state.selected_session not in session_options and st.session_state.selected_session != NEW_CHAT_LABEL:
-    session_options.insert(1, st.session_state.selected_session)
+if "new_chat_titles" not in st.session_state:
+    st.session_state.new_chat_titles = []
 
+session_options += st.session_state.new_chat_titles
 selected_index = session_options.index(st.session_state.selected_session) if st.session_state.selected_session in session_options else 0
+
 selected = st.sidebar.selectbox(
     "Select a session",
     session_options,
@@ -108,6 +111,7 @@ if selected != st.session_state.selected_session:
     st.session_state.session_id = session_id_map.get(selected)
     st.query_params["session"] = st.session_state.session_id
     st.session_state.session_loaded_from_db = False
+
     if selected != NEW_CHAT_LABEL:
         try:
             history_resp = requests.get(f"{API_URL}/history/{st.session_state.session_id}")
@@ -155,12 +159,19 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 if prompt := st.chat_input("Type your question here..."):
-    if st.session_state.session_id is None or st.session_state.selected_session == NEW_CHAT_LABEL:
+    if selected == NEW_CHAT_LABEL:
         new_id = str(uuid.uuid4())
         st.session_state.session_id = new_id
-        st.session_state.selected_session = "Untitled"
-        st.query_params["session"] = new_id
+        new_chat_title = f"New Chat {len(st.session_state.new_chat_titles) + 1}"
+        st.session_state.selected_session = new_chat_title
         st.session_state.messages = []
+        st.query_params["session"] = new_id
+        st.session_state.new_chat_titles.append(new_chat_title)
+
+        try:
+            requests.post(f"{API_URL}/history/{new_id}", json={"role": "system", "content": "New session created"})
+        except Exception as e:
+            st.error(f"Failed to create session in DB: {e}")
 
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
