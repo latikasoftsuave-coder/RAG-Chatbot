@@ -26,24 +26,21 @@ def send_message(session_id, message):
     if not st.session_state.get("connection_established"):
         st.error("WebSocket connection not available")
         return None
+    formatted_message = f"{session_id}|{message}"
     try:
-        formatted_message = f"{session_id}|{message}"
         st.session_state.ws_connection.send(formatted_message)
         response = st.session_state.ws_connection.recv()
         return response
-    except ws_sync.ConnectionClosed:
+    except Exception as e:
         try:
             st.session_state.ws_connection = ws_sync.connect(f"{WS_URL}/global")
             st.session_state.connection_established = True
-            formatted_message = f"{session_id}|{message}"
             st.session_state.ws_connection.send(formatted_message)
             response = st.session_state.ws_connection.recv()
             return response
         except Exception as e:
             st.session_state.connection_established = False
             return f"❌ Connection error: {e}"
-    except Exception as e:
-        return f"❌ Error: {e}"
 
 def load_sessions():
     try:
