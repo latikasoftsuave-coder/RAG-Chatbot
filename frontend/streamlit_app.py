@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
-import asyncio
 import uuid
 import websockets.sync.client as ws_sync
+import time
 
 API_URL = "http://127.0.0.1:8000/chat"
 WS_URL = "ws://127.0.0.1:8000/chat/ws"
@@ -13,56 +13,55 @@ st.title("Chatbot using RAG 🔍")
 st.write("Hey, I'm your SS Employee Handbook Guide!")
 st.sidebar.title("💬 Chat History")
 
-def run_async(coro):
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
-
 if "ws_connection" not in st.session_state:
-    st.session_state.ws_connection = None
-
-def get_ws(session_id):
-    ws = st.session_state.ws_connection
-    if ws is None:
-        if not session_id:
-            raise ValueError("Session ID cannot be None for WebSocket")
-        ws = ws_sync.connect(f"{WS_URL}/{session_id}")
-        st.session_state.ws_connection = ws
-    return ws
-
-def send_receive(session_id, message):
-    ws = get_ws(st.session_state.session_id)
     try:
-        ws.send(message)
-        response = ws.recv()
-    except ws_sync.ConnectionClosed:
-        ws = ws_sync.connect(f"{WS_URL}/{session_id}")
-        st.session_state.ws_connection = ws
-        ws.send(message)
-        response = ws.recv()
-    return response
-
-async def close_ws():
-    ws = st.session_state.get("ws_connection")
-    if ws:
-        await ws.close()
+        st.session_state.ws_connection = ws_sync.connect(f"{WS_URL}/global")
+        st.session_state.connection_established = True
+    except Exception as e:
+        st.error(f"Failed to connect to WebSocket: {e}")
         st.session_state.ws_connection = None
+        st.session_state.connection_established = False
 
-try:
-    sessions_resp = requests.get(f"{API_URL}/sessions/")
-    all_sessions_data = sessions_resp.json().get("sessions", []) if sessions_resp.status_code == 200 else []
-    all_sessions = []
-    session_id_map = {}
-    for s in all_sessions_data:
-        title = s.get("title") or s.get("id")
-        all_sessions.append(title)
-        session_id_map[title] = s["id"]
-except Exception:
-    all_sessions = []
-    session_id_map = {}
+def send_message(session_id, message):
+    if not st.session_state.get("connection_established"):
+        st.error("WebSocket connection not available")
+        return None
+    try:
+        formatted_message = f"{session_id}|{message}"
+        st.session_state.ws_connection.send(formatted_message)
+        response = st.session_state.ws_connection.recv()
+        return response
+    except ws_sync.ConnectionClosed:
+        try:
+            st.session_state.ws_connection = ws_sync.connect(f"{WS_URL}/global")
+            st.session_state.connection_established = True
+            formatted_message = f"{session_id}|{message}"
+            st.session_state.ws_connection.send(formatted_message)
+            response = st.session_state.ws_connection.recv()
+            return response
+        except Exception as e:
+            st.session_state.connection_established = False
+            return f"❌ Connection error: {e}"
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+def load_sessions():
+    try:
+        sessions_resp = requests.get(f"{API_URL}/sessions/")
+        if sessions_resp.status_code == 200:
+            all_sessions_data = sessions_resp.json().get("sessions", [])
+            all_sessions = []
+            session_id_map = {}
+            for s in all_sessions_data:
+                title = s.get("title") or s.get("id")
+                all_sessions.append(title)
+                session_id_map[title] = s["id"]
+            return all_sessions, session_id_map
+    except Exception as e:
+        st.error(f"Error loading sessions: {e}")
+    return [], {}
+
+all_sessions, session_id_map = load_sessions()
 
 if "selected_session" not in st.session_state:
     st.session_state.selected_session = NEW_CHAT_LABEL
@@ -74,11 +73,17 @@ if "session_loaded_from_db" not in st.session_state:
     st.session_state.session_loaded_from_db = False
 if "show_confirm_delete" not in st.session_state:
     st.session_state.show_confirm_delete = False
+if "last_session_refresh" not in st.session_state:
+    st.session_state.last_session_refresh = time.time()
+
+current_time = time.time()
+if current_time - st.session_state.last_session_refresh > 30:
+    all_sessions, session_id_map = load_sessions()
+    st.session_state.last_session_refresh = current_time
 
 url_session_id = st.query_params.get("session", [None])
 if isinstance(url_session_id, list):
     url_session_id = url_session_id[0]
-
 if url_session_id and not st.session_state.session_loaded_from_db:
     for title, sid in session_id_map.items():
         if sid == url_session_id:
@@ -86,19 +91,19 @@ if url_session_id and not st.session_state.session_loaded_from_db:
             st.session_state.session_id = sid
             try:
                 history_resp = requests.get(f"{API_URL}/history/{sid}")
-                st.session_state.messages = history_resp.json() if history_resp.status_code == 200 else []
+                if history_resp.status_code == 200:
+                    st.session_state.messages = history_resp.json()
+                else:
+                    st.session_state.messages = []
             except Exception:
                 st.session_state.messages = []
             st.session_state.session_loaded_from_db = True
             break
 
 session_options = [NEW_CHAT_LABEL] + all_sessions
-if "new_chat_titles" not in st.session_state:
-    st.session_state.new_chat_titles = []
 
-session_options += st.session_state.new_chat_titles
-selected_index = session_options.index(st.session_state.selected_session) if st.session_state.selected_session in session_options else 0
-
+selected_index = session_options.index(
+    st.session_state.selected_session) if st.session_state.selected_session in session_options else 0
 selected = st.sidebar.selectbox(
     "Select a session",
     session_options,
@@ -115,7 +120,10 @@ if selected != st.session_state.selected_session:
     if selected != NEW_CHAT_LABEL:
         try:
             history_resp = requests.get(f"{API_URL}/history/{st.session_state.session_id}")
-            st.session_state.messages = history_resp.json() if history_resp.status_code == 200 else []
+            if history_resp.status_code == 200:
+                st.session_state.messages = history_resp.json()
+            else:
+                st.session_state.messages = []
         except Exception:
             st.session_state.messages = []
         st.session_state.session_loaded_from_db = True
@@ -144,6 +152,7 @@ if selected != NEW_CHAT_LABEL:
                         st.session_state.messages = []
                         st.query_params.clear()
                         st.session_state.show_confirm_delete = False
+                        all_sessions, session_id_map = load_sessions()
                         st.rerun()
                     else:
                         st.error("Failed to delete session.")
@@ -159,30 +168,39 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 if prompt := st.chat_input("Type your question here..."):
-    if selected == NEW_CHAT_LABEL:
+    if selected == NEW_CHAT_LABEL or st.session_state.session_id is None:
         new_id = str(uuid.uuid4())
         st.session_state.session_id = new_id
-        new_chat_title = f"New Chat {len(st.session_state.new_chat_titles) + 1}"
-        st.session_state.selected_session = new_chat_title
         st.session_state.messages = []
         st.query_params["session"] = new_id
-        st.session_state.new_chat_titles.append(new_chat_title)
-
-        try:
-            requests.post(f"{API_URL}/history/{new_id}", json={"role": "system", "content": "New session created"})
-        except Exception as e:
-            st.error(f"Failed to create session in DB: {e}")
 
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    try:
-        ws = get_ws(st.session_state.session_id)
-        ws.send(prompt)
-        response = ws.recv()
-        st.session_state.messages.append({"role": "assistant", "content": response})
-    except Exception as e:
-        st.session_state.messages.append({"role": "assistant", "content": f"❌ Something went wrong: {e}"})
+    with st.chat_message("assistant"):
+        response_placeholder = st.empty()
+        response_placeholder.markdown("▌")
 
+        if st.session_state.session_id:
+            response = send_message(st.session_state.session_id, prompt)
+            if response:
+                response_placeholder.markdown(response)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+            else:
+                error_msg = "❌ Failed to get response from server"
+                response_placeholder.markdown(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+        else:
+            error_msg = "❌ No active session"
+            response_placeholder.markdown(error_msg)
+            st.session_state.messages.append({"role": "assistant", "content": error_msg})
+
+    all_sessions, session_id_map = load_sessions()
+    st.session_state.selected_session = all_sessions[0] if all_sessions else NEW_CHAT_LABEL
     st.rerun()
+
+if hasattr(st, 'scriptrunner') and st.scriptrunner and hasattr(st.scriptrunner, 'on_script_finished'):
+    st.scriptrunner.on_script_finished(
+        lambda: st.session_state.ws_connection.close() if st.session_state.get('ws_connection') else None
+    )

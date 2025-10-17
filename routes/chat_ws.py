@@ -14,14 +14,22 @@ def get_db():
     finally:
         db.close()
 
-@router.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str, db: Session = Depends(get_db)):
+@router.websocket("/ws/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, client_id: str, db: Session = Depends(get_db)):
     await websocket.accept()
     chat_service = ChatService(db, rag_service)
     try:
         while True:
             data = await websocket.receive_text()
-            response = chat_service.handle_user_query(session_id, data)
+            if "|" in data:
+                session_id, message_content = data.split("|", 1)
+            else:
+                session_id = client_id
+                message_content = data
+            response = chat_service.handle_user_query(session_id, message_content)
             await websocket.send_text(response["answer"])
     except WebSocketDisconnect:
-        print(f"Client disconnected: {session_id}")
+        print(f"Client disconnected: {client_id}")
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        await websocket.send_text(f"❌ Error: {str(e)}")
