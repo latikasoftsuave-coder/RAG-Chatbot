@@ -27,14 +27,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str, db: Session =
             else:
                 session_id = client_id
                 message_content = data
+            response_dict = chat_service.handle_user_query(session_id, message_content)
+            answer = response_dict.get("answer", "")
 
-            chat_service.save_user_message(session_id, message_content)
-            history = chat_service.get_last_messages(session_id)
-
-            for chunk in rag_service.stream_answer(message_content, history):
-                await websocket.send_text(chunk)
+            chunk_size = 50
+            for i in range(0, len(answer), chunk_size):
+                await websocket.send_text(answer[i:i+chunk_size])
                 await asyncio.sleep(0.05)
-
-            chat_service.save_assistant_message(session_id, rag_service.get_answer(message_content, history)["answer"])
     except WebSocketDisconnect:
         print(f"Client disconnected: {client_id}")
