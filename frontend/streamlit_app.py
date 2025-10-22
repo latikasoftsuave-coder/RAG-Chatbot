@@ -180,14 +180,32 @@ if prompt := st.chat_input("Type your question here..."):
         response_placeholder.markdown("▌")
 
         if st.session_state.session_id:
-            response = send_message(st.session_state.session_id, prompt)
-            if response:
-                response_placeholder.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
-            else:
-                error_msg = "❌ Failed to get response from server"
-                response_placeholder.markdown(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+            st.session_state.ws_connection.send(f"{st.session_state.session_id}|{prompt}")
+            full_response = ""
+            start_time = time.time()
+            timeout = 30
+            while time.time() - start_time < timeout:
+                try:
+                    chunk = st.session_state.ws_connection.recv(timeout=0.1)
+                    if chunk is not None:
+                        full_response += chunk
+                        response_placeholder.markdown(full_response + "▌")
+                        start_time = time.time()
+                except TimeoutError:
+                    if full_response and len(full_response) > 10:
+                        if time.time() - start_time > 2.0:
+                            break
+                    continue
+                except Exception as e:
+                    if full_response:
+                        break
+                    else:
+                        st.error(f"Error receiving response: {e}")
+                        full_response = f"❌ Error: {e}"
+                        break
+            response_placeholder.markdown(full_response)
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+
         else:
             error_msg = "❌ No active session"
             response_placeholder.markdown(error_msg)

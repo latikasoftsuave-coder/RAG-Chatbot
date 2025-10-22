@@ -25,6 +25,12 @@ class RAGService:
         )
         return qa, retriever
 
+    def stream_answer(self, query: str, history: list = None):
+        full_answer = self.get_answer(query, history)["answer"]
+        chunk_size = 50
+        for i in range(0, len(full_answer), chunk_size):
+            yield full_answer[i:i + chunk_size]
+
     def get_answer(self, query: str, history: list = None):
         try:
             qa, retriever = self.load_rag()
